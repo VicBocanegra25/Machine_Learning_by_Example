@@ -1,0 +1,4 @@
+The dataset should be downloaded from: 
+https://www.kaggle.com/competitions/avazu-ctr-prediction/data?select=train.gz
+
+The train.csv dataset should be set in this same folder in order to be loaded by the models. 
