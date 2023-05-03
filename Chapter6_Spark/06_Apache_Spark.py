@@ -1,10 +1,11 @@
 """
-# Allocating memory and all processing power
-./bin/pyspark --master local[*]  --driver-memory 20G
+# Allocating memory and all processing power. This needs to be run in a terminal
+pyspark --master local[*]  --driver-memory 30G
 
 # Building an app in spark
 spark = SparkSession.builder.appName("CTR").getOrCreate()
 
+# Importing the pyspark types
 from pyspark.sql.types import StructField, StringType, StructType, IntegerType
 
 # Creating a schema for the dataframe
@@ -36,7 +37,7 @@ schema = StructType([
 ])
 
 # Loading the dataframe
-df = spark.read.csv("/home/vicbocanegra/PycharmProjects/MLExample/Packt/Machine_Learning_by_Example/Chapter6_Spark/dataset/train.csv", schema=schema, header=True)
+df = spark.read.csv("C:/Users/52556/Documents_outside_ODB/Python_Excercises/Machine_Learning/Machine_Learning_by_Example/dataset/train.csv", schema=schema, header=True)
 
 # Dropping columns that provide little information
 df = df.drop('id').drop('hour').drop('device_id').drop('device_ip')
@@ -45,18 +46,17 @@ df = df.drop('id').drop('hour').drop('device_id').drop('device_ip')
 df = df.withColumnRenamed("click", "label")
 
 # Let's look at the current columns in the DataFrame object:
-df.columns['label', 'C1', 'banner_pos', 'site_id', 'site_domain', 'site_category', 'app_id', 'app_domain', 'app_category', 'device_model', 'device_type', 'device_conn_type', 'C14', 'C15', 'C16', 'C17', 'C18', 'C19', 'C20', 'C21']
-
+# df.columns['label', 'C1', 'banner_pos', 'site_id', 'site_domain', 'site_category', 'app_id', 'app_domain', 'app_category', 'device_model', 'device_type', 'device_conn_type', 'C14', 'C15', 'C16', 'C17', 'C18', 'C19', 'C20', 'C21']
 
 # Splitting and caching the data
 df_train, df_test = df.randomSplit([0.7, 0.3], 42)
 
 # Applying caching and persistence so we don't have to recalculate the dataframe again (if required)
 df_train.cache()
-DataFrame[label: int, C1: string, banner_pos: string, site_id: string, site_domain: string, site_category: string, app_id: string, app_domain: string, app_category: string, device_model: string, device_type: string, device_conn_type: string, C14: string, C15: string, C16: string, C17: string, C18: string, C19: string, C20: string, C21: string]
+# DataFrame[label: int, C1: string, banner_pos: string, site_id: string, site_domain: string, site_category: string, app_id: string, app_domain: string, app_category: string, device_model: string, device_type: string, device_conn_type: string, C14: string, C15: string, C16: string, C17: string, C18: string, C19: string, C20: string, C21: string]
 
 df_test.cache()
-DataFrame[label: int, C1: string, banner_pos: string, site_id: string, site_domain: string, site_category: string, app_id: string, app_domain: string, app_category: string, device_model: string, device_type: string, device_conn_type: string, C14: string, C15: string, C16: string, C17: string, C18: string, C19: string, C20: string, C21: string]
+# DataFrame[label: int, C1: string, banner_pos: string, site_id: string, site_domain: string, site_category: string, app_id: string, app_domain: string, app_category: string, device_model: string, device_type: string, device_conn_type: string, C14: string, C15: string, C16: string, C17: string, C18: string, C19: string, C20: string, C21: string]
 
 # One-hot encoding categorical features
 categorical = df_train.columns
@@ -80,7 +80,7 @@ assembler = VectorAssembler(
     outputCol = "features")
 
 # We chain all these three stages together into a pipeline with the Pipeline module in PySpark, which better organizes our one-hot encoding workflow:
-stages = indexers+ [encoder, assembler]
+stages = indexers + [encoder, assembler]
 from pyspark.ml import Pipeline
 pipeline = Pipeline(stages = stages)
 # The variable stages is a list of operations needed for encoding.
@@ -125,9 +125,68 @@ predictions.cache()
 
 # We evaluate the Area Under Curve (AUC) of the Receiver Operating Characteristics (ROC) on the testing set using the BinaryClassificationEvaluator function with the areaUnderROC evaluation metric:
 from pyspark.ml.evaluation import BinaryClassificationEvaluator
-ev = BinaryClassificationEvaluator(rawPredictionCol = "rawPRediction", metricName = "areaUnderROC")
+ev = BinaryClassificationEvaluator(rawPredictionCol = "rawPrediction", metricName = "areaUnderROC")
 print(ev.evaluate(predictions))
 
+# Performing feature hashing. Importing the module and initializing a feature hasher with an output size of 10_000
+from pyspark.ml.feature import FeatureHasher
+hasher = FeatureHasher(numFeatures = 10_000, inputCols = categorical,
+outputCol = "features")
+
+# We use the defined hasher to convert the input DataFrame:
+hasher.transform(df_train).select("features").show()
+
+# For better organization of the entire workflow, we chain the hasher and classification model together into a pipeline:
+classifier = LogisticRegression(maxIter = 20, regParam = 0.001,
+elasticNetParam = 0.001)
+stages = [hasher, classifier]
+pipeline = Pipeline(stages = stages)
+
+# We fit the pipelined model on the training set as follows:
+model = pipeline.fit(df_train)
+
+# We apply the trained model on the testing set and record the prediction results:
+predictions = model.transform(df_test)
+predictions.cache()
+
+# We apply the trained model on the testing set and record the prediction results:
+ev = BinaryClassificationEvaluator(rawPredictionCol = "rawPrediction",
+metricName = "areaUnderROC")
+print(ev.evaluate(predictions))
+
+# Performing feature interaction
+from pyspark.ml.feature import RFormula
+
+# We need to define an interaction formula accordingly:
+cat_inter = ["C14", "C15"]
+cat_no_inter = [c for c in categorical if c not in cat_inter]
+concat = "+".join(categorical)
+interaction = ":".join(cat_inter)
+formula = "label ~ " + concat + "+" + interaction
+print(formula)
+
+# Now, we can initialize a feature interactor with this formula:
+interactor = RFormula(
+	formula = formula,
+	featuresCol = "features",
+	labelCol="label").setHandleInvalid("keep") # Making sure it won't crash if new values occurs
+
+# We use the defined feature interactor to fit and transform the input DataFrame:
+interactor.fit(df_train).transform(df_train).select("features").show()
 
 
+# Again, we chain the feature interactor and classification model together into a pipeline to organize the entire workflow:
+classifier = LogisticRegression(maxIter = 20, regParam = 0.001,
+elasticNetParam = 0.001)
+
+stages = [interactor, classifier]
+pipeline = Pipeline(stages = stages)
+model = pipeline.fit(df_train)
+
+predictions = model.transform(df_test)
+predictions.cache()
+
+ev = BinaryClassificationEvaluator(rawPredictionCol = "rawPrediction",
+metricName = "areaUnderROC")
+print(ev.evaluate(predictions))
 """
