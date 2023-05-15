@@ -2,3 +2,4 @@ Chapter4_Tree_based/dataset/train.csv
 Chapter5_Logistic_regression/dataset/train.csv
 dataset/
 tensorflow_env/
+.nlp_env/
